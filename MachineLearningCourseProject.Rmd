@@ -1,0 +1,179 @@
+---
+title: "Machine Learning Final Project"
+author: "Kyle Ward"
+date: "January 4, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(randomForest)
+```
+
+## Executive Summary
+
+The purpose of this analysis is to estimate a prediction model to determine how well a weight lifting exercise is performed based on performance data collected from the use of various sensors.  The performance of the weight lifting exercise is classified according to five different classifications with class A representing performing the exercise exactly according to the specified instructions.  Data for this analysis was obtained from a Human Activity Recognition dataset licensed under the Creative Commons license (CC BY-SA) (Read more: <http://groupwar<e.les.inf.puc-rio.br/har#dataset#ixzz5bfIWAJVO>).
+
+Two competing machine learning models will be evaluated and the model that predicts the correct classification with greater accuracy will be selected.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r reading the data, include=FALSE}
+setwd("C:/Users/kward/DataScience/Machine Learning")
+trainData <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testData <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+## Exploratory Data Analysis
+
+##### Weight Lifting Exercise Performance Classification Definitions (Classe):
+* A: Exactly according to specification
+* B: Elbows in front
+* C: Dumbell lifted halfway
+* D: Dumbell lowered halfway
+* E: Hips in front
+
+```{r classe histogram, echo=FALSE}
+plota <- ggplot(trainData, aes(x=classe)) + geom_bar() + labs(title="Performance Classification Bar Chart")  # Y axis derived from counts of X item
+print(plota)
+```
+
+#### Classification Frequency Percentages (Training Data) 
+```{r classe percentages, echo=FALSE}
+attach(trainData)
+mytable <- table(classe)
+prop.table(mytable) # cell percentage
+```
+
+## Pre-Processing Data
+
+### Removing Zero Covariates 
+#### Displaying first 10 non zero variables
+```{r non zero variables, echo=FALSE}
+nzv_sm <- nearZeroVar(trainData, saveMetrics = TRUE)
+nzv_sm[nzv_sm$nzv,][1:10,]
+```
+
+#### Tidying Data Set
+
+```{r remove nzv variables, include=FALSE}
+nzv <- nearZeroVar(trainData)
+filteredtraining <- trainData[,-nzv]
+filteredtest <- testData[,-nzv]
+dim(trainData)
+dim(filteredtraining)
+dim(filteredtest)
+```
+
+Removed variables where vast majority of values were NA's and removed first 6 columns used primary as identifiers.  
+```{r remove na variables, include=FALSE}
+largeNA<-sapply(filteredtraining, function(x) mean(is.na(x)))>=.90
+train <-filteredtraining[,largeNA==F]
+test <-filteredtest[,largeNA==F]
+```
+
+```{r remove first 6 columns, include=FALSE}
+train<-train[,-(1:6)]
+test<-test[,-(1:6)]
+```
+
+The remaining pre-processed data sets have the following dimensions:
+```{r dimension, echo=TRUE}
+dim(train)
+dim(test)
+```
+
+## Splitting Data
+
+```{r split data, echo=TRUE}
+inTrain <- createDataPartition(y=train$classe,
+                               p=0.8, list=FALSE)
+training <- train[inTrain,]
+validation <- train[-inTrain,]
+```
+
+## Machine Learning Model Formulation
+
+### Model 1: Random Forest Cross Validation Method
+
+Fitting a Random Forest Model based on training data
+```{r fit rfcv model, echo=FALSE}
+set.seed(54321)
+control<-trainControl(method = "cv",number = 3,verboseIter = FALSE)
+RFmodeltrain<-train(classe~.,data=training,method="rf",trControl=control)
+RFmodeltrain$finalModel
+```
+
+Evaluating random forest cv model performance based on validation dataset
+```{r predict rfcv model validation, echo=FALSE}
+RFpred<-predict(RFmodeltrain,newdata = validation)
+RF<-confusionMatrix(validation$classe,RFpred)
+RF
+```
+### Model 2: Gradient Boosting Method
+
+Fitting a Gradient Boosting Model with trees based on training data
+```{r fit gbm model, echo=FALSE}
+set.seed(54321)
+GBMmodeltrain<-train(classe~.,data=training,method="gbm",trControl=control,verbose=FALSE)
+GBMmodeltrain$finalModel
+```
+
+Evaluating Gradient Boosting model performance based on validation dataset
+```{r predict gbm model validation, echo=FALSE}
+GBMpred<-predict(GBMmodeltrain,newdata = validation)
+GBM<-confusionMatrix(validation$classe,GBMpred)
+GBM
+```
+
+## Conclusion
+Random Forest Model yields creater accuracy  compared with the Gradient Booting method (99%>96%)
+
+### Selecting Random Forest Model to use for prediction submission using test dataset
+```{r predict final model validation, echo=true}
+FinalPred<-predict(RFmodeltrain,newdata = test)
+FinalPreddf<-data.frame(test_ID=test$problem_id,PredictClass=FinalPred)
+FinalPreddf
+```
+
+# Appendix
+
+### Additional Data Exploration
+
+#### Most relevant 20 variables on the model
+```{r importance, echo=true}
+importance <- varImp(RFmodeltrain, scale=FALSE)
+print(importance)
+plot(importance)
+```
+
+#### Feature Plot - Belt Euler Angles
+```{r belt boxplot, echo=FALSE}
+featurePlot(x=training[,c("roll_belt","yaw_belt","pitch_belt")],
+            y = training$classe,
+            plot="box")
+```
+
+#### Belt Euler Angle Scatterplot by Classe
+```{r belt scatterplot, echo=FALSE}
+p1 <- ggplot(training, aes(x = yaw_belt, y=roll_belt, colour=classe))+geom_point()
+p1+facet_wrap(~classe)
+```
+
+
+#### Feature BoxPlot - Dumbbell magnometer
+```{r dumbbell boxplot, echo=FALSE}
+featurePlot(x=training[,c("magnet_dumbbell_x","magnet_dumbbell_y","magnet_dumbbell_z")],
+            y = training$classe,
+            plot="box")
+```
+
+#### Dumbbell Magnometer Scatterplot by Classe
+```{r dumbbell scatter, echo=FALSE}
+p4 <- ggplot(training, aes(x = magnet_dumbbell_x, y=magnet_dumbbell_z, colour=classe))+geom_point()
+p4+facet_wrap(~classe)
+```
